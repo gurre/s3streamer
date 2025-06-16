@@ -133,11 +133,15 @@ func streamWithPipe(ctx context.Context, client *s3.Client, bucket, key string, 
 
 Process large files in chunks or resume interrupted operations:
 
+> [!NOTE]
+> Resume capability with non-zero offsets is **only supported for uncompressed files**. Compressed files (gzip, bzip2) cannot be resumed from arbitrary byte offsets because compression streams require reading from the beginning to properly decompress. For compressed files, only use `offset = 0`.
+
 ```go
 func resumableProcessing(ctx context.Context, client *s3.Client, bucket, key string) error {
     streamer := s3streamer.NewS3Streamer(client, 1)
     
     // Calculate offset (e.g., from previous processing state)
+    // NOTE: This only works for uncompressed files!
     offset := int64(1024 * 1024 * 100) // Skip first 100MB
     
     var recordCount int
@@ -155,6 +159,11 @@ func resumableProcessing(ctx context.Context, client *s3.Client, bucket, key str
     return err
 }
 ```
+
+**Supported Resume Scenarios:**
+- ✅ Uncompressed files with any offset
+- ✅ Compressed files with offset = 0 only
+- ❌ Compressed files with non-zero offsets (will cause decompression errors)
 
 ## Performance Characteristics
 
