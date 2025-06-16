@@ -190,28 +190,6 @@ Based on included benchmarks processing 1000 records with different chunk sizes 
 
 *Results show consistent performance across chunk sizes with minimal overhead.*
 
-## API Reference
-
-### Core Types
-
-```go
-type S3Client interface {
-    GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
-    HeadObject(ctx context.Context, params *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
-}
-
-type Streamer interface {
-    Stream(ctx context.Context, bucket, key string, offset int64, fn func([]byte) error) error
-}
-
-type Compression int
-const (
-    Uncompressed Compression = iota
-    Bzip2
-    Gzip
-)
-```
-
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
