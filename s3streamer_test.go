@@ -154,17 +154,19 @@ func TestS3StreamerUncompressed(t *testing.T) {
 	mockClient := NewMockS3Client(testData)
 
 	// Create streamer with small chunks
-	streamer := NewS3Streamer(mockClient, 1)
+	streamer := NewS3Streamer(mockClient)
 	streamer.chunkSize = 1024 // 1KB chunks
 
 	// Process the stream
 	var records []TestData
-	err := streamer.Stream(context.Background(), "test-bucket", "test-key", 0, func(line []byte) error {
+	var offsets []int64
+	err := streamer.Stream(context.Background(), "test-bucket", "test-key", 0, func(line []byte, offset int64) error {
 		var record TestData
 		if err := json.Unmarshal(line, &record); err != nil {
 			return err
 		}
 		records = append(records, record)
+		offsets = append(offsets, offset)
 		return nil
 	})
 
@@ -195,6 +197,18 @@ func TestS3StreamerUncompressed(t *testing.T) {
 			t.Errorf("Last record ID = %s, want %s", got, want)
 		}
 	}
+
+	// Verify offsets are increasing
+	if len(offsets) > 1 {
+		if offsets[0] != 0 {
+			t.Errorf("First offset = %d, want 0", offsets[0])
+		}
+		for i := 1; i < len(offsets); i++ {
+			if offsets[i] <= offsets[i-1] {
+				t.Errorf("Offset[%d] = %d should be > offset[%d] = %d", i, offsets[i], i-1, offsets[i-1])
+			}
+		}
+	}
 }
 
 func TestS3StreamerGzipped(t *testing.T) {
@@ -203,11 +217,11 @@ func TestS3StreamerGzipped(t *testing.T) {
 	mockClient := NewMockS3Client(testData)
 
 	// Create streamer
-	streamer := NewS3Streamer(mockClient, 1)
+	streamer := NewS3Streamer(mockClient)
 
 	// Process the stream
 	var records []TestData
-	err := streamer.Stream(context.Background(), "test-bucket", "test-key", 0, func(line []byte) error {
+	err := streamer.Stream(context.Background(), "test-bucket", "test-key", 0, func(line []byte, offset int64) error {
 		var record TestData
 		if err := json.Unmarshal(line, &record); err != nil {
 			return err
@@ -260,11 +274,11 @@ func TestS3StreamerWithOffset(t *testing.T) {
 	}
 
 	// Create streamer
-	streamer := NewS3Streamer(mockClient, 1)
+	streamer := NewS3Streamer(mockClient)
 
 	// Process the stream from offset
 	var records []TestData
-	err := streamer.Stream(context.Background(), "test-bucket", "test-key", offset, func(line []byte) error {
+	err := streamer.Stream(context.Background(), "test-bucket", "test-key", offset, func(line []byte, lineOffset int64) error {
 		var record TestData
 		if err := json.Unmarshal(line, &record); err != nil {
 			return err
@@ -300,12 +314,12 @@ func TestS3StreamerProcessingError(t *testing.T) {
 	mockClient := NewMockS3Client(testData)
 
 	// Create streamer
-	streamer := NewS3Streamer(mockClient, 1)
+	streamer := NewS3Streamer(mockClient)
 
 	// Inject an error during processing of the 10th record
 	expectedError := errors.New("test processing error")
 	var processedCount int
-	err := streamer.Stream(context.Background(), "test-bucket", "test-key", 0, func(line []byte) error {
+	err := streamer.Stream(context.Background(), "test-bucket", "test-key", 0, func(line []byte, offset int64) error {
 		processedCount++
 		if processedCount == 10 {
 			return expectedError
@@ -333,11 +347,11 @@ func TestS3StreamerInvalidRange(t *testing.T) {
 	mockClient := NewMockS3Client(testData)
 
 	// Create streamer
-	streamer := NewS3Streamer(mockClient, 1)
+	streamer := NewS3Streamer(mockClient)
 
 	// Attempt to stream with an offset beyond the file size
 	invalidOffset := int64(len(testData)) + 100
-	err := streamer.Stream(context.Background(), "test-bucket", "test-key", invalidOffset, func(line []byte) error {
+	err := streamer.Stream(context.Background(), "test-bucket", "test-key", invalidOffset, func(line []byte, offset int64) error {
 		return nil
 	})
 
@@ -348,6 +362,73 @@ func TestS3StreamerInvalidRange(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "offset") || !strings.Contains(err.Error(), "exceeds object size") {
 		t.Errorf("Error message = %q, want to contain 'offset' and 'exceeds object size'", err.Error())
+	}
+}
+
+func TestS3StreamerOffsetTracking(t *testing.T) {
+	// Create simple test data with known line lengths
+	testLines := []string{
+		`{"id": "test1"}`,
+		`{"id": "test2", "name": "longer"}`,
+		`{"id": "test3"}`,
+	}
+
+	var testData []byte
+	for _, line := range testLines {
+		testData = append(testData, []byte(line)...)
+		testData = append(testData, '\n')
+	}
+
+	mockClient := NewMockS3Client(testData)
+	streamer := NewS3Streamer(mockClient)
+
+	// Track received offsets and lines
+	var receivedOffsets []int64
+	var receivedLines []string
+
+	err := streamer.Stream(context.Background(), "test-bucket", "test-key", 0, func(line []byte, offset int64) error {
+		receivedOffsets = append(receivedOffsets, offset)
+		receivedLines = append(receivedLines, string(line))
+		return nil
+	})
+
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	// Verify we got the correct number of lines
+	if got, want := len(receivedLines), 3; got != want {
+		t.Errorf("Line count = %d, want %d", got, want)
+	}
+
+	// Verify offsets start at 0
+	if len(receivedOffsets) > 0 && receivedOffsets[0] != 0 {
+		t.Errorf("First offset = %d, want 0", receivedOffsets[0])
+	}
+
+	// Verify each line matches expected content
+	for i, expectedLine := range testLines {
+		if i < len(receivedLines) {
+			if receivedLines[i] != expectedLine {
+				t.Errorf("Line %d = %q, want %q", i, receivedLines[i], expectedLine)
+			}
+		}
+	}
+
+	// Verify offsets are calculated correctly
+	expectedOffsets := []int64{0}
+	currentOffset := int64(0)
+	for i := 0; i < len(testLines)-1; i++ {
+		currentOffset += int64(len(testLines[i])) + 1 // +1 for newline
+		expectedOffsets = append(expectedOffsets, currentOffset)
+	}
+
+	for i, expectedOffset := range expectedOffsets {
+		if i < len(receivedOffsets) {
+			if receivedOffsets[i] != expectedOffset {
+				t.Errorf("Offset %d = %d, want %d", i, receivedOffsets[i], expectedOffset)
+			}
+		}
 	}
 }
 
@@ -370,12 +451,12 @@ func BenchmarkS3StreamerPerformance(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				b.StopTimer()
 				mockClient := NewMockS3Client(testData)
-				streamer := NewS3Streamer(mockClient, 1)
+				streamer := NewS3Streamer(mockClient)
 				streamer.chunkSize = chunkSize
 				b.StartTimer()
 
 				var count int
-				err := streamer.Stream(context.Background(), "test-bucket", "test-key", 0, func(line []byte) error {
+				err := streamer.Stream(context.Background(), "test-bucket", "test-key", 0, func(line []byte, offset int64) error {
 					count++
 					return nil
 				})

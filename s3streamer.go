@@ -14,7 +14,7 @@ import (
 // Example:
 //
 //	client := s3.NewFromConfig(cfg)
-//	streamer := s3streamer.NewS3Streamer(client, 1)
+//	streamer := s3streamer.NewS3Streamer(client)
 type S3Client interface {
 	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
 	HeadObject(ctx context.Context, params *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
@@ -24,19 +24,19 @@ type S3Client interface {
 // Example:
 //
 //	var streamer s3streamer.Streamer
-//	err := streamer.Stream(ctx, "my-bucket", "data.json.gz", 0, func(line []byte) error {
-//	    // Process each line
+//	err := streamer.Stream(ctx, "my-bucket", "data.json.gz", 0, func(line []byte, offset int64) error {
+//	    // Process each line with its offset
 //	    return nil
 //	})
 type Streamer interface {
-	Stream(ctx context.Context, bucket, key string, offset int64, fn func([]byte) error) error
+	Stream(ctx context.Context, bucket, key string, offset int64, fn func([]byte, int64) error) error
 }
 
 // S3Streamer implements the Streamer interface for streaming data from S3.
 // Example:
 //
 //	client := s3.NewFromConfig(cfg)
-//	streamer := s3streamer.NewS3Streamer(client, 1)
+//	streamer := s3streamer.NewS3Streamer(client)
 //	err := streamer.Stream(ctx, "my-bucket", "data.json.gz", 0, processLine)
 type S3Streamer struct {
 	client    S3Client
@@ -47,8 +47,8 @@ type S3Streamer struct {
 // Example:
 //
 //	client := s3.NewFromConfig(cfg)
-//	streamer := s3streamer.NewS3Streamer(client, 1) // 1 concurrent download
-func NewS3Streamer(client S3Client, concurrency int) *S3Streamer {
+//	streamer := s3streamer.NewS3Streamer(client)
+func NewS3Streamer(client S3Client) *S3Streamer {
 	return &S3Streamer{
 		client:    client,
 		chunkSize: 5 * 1024 * 1024, // 5MB chunks
@@ -56,14 +56,15 @@ func NewS3Streamer(client S3Client, concurrency int) *S3Streamer {
 }
 
 // Stream downloads data from S3 in chunks, decompresses it if needed, and processes each line.
+// The callback function receives both the line data and its byte offset within the decompressed stream.
 // Example:
 //
-//	streamer := s3streamer.NewS3Streamer(client, 1)
-//	err := streamer.Stream(ctx, "my-bucket", "data.json.gz", 0, func(line []byte) error {
-//	    // Process each line
+//	streamer := s3streamer.NewS3Streamer(client)
+//	err := streamer.Stream(ctx, "my-bucket", "data.json.gz", 0, func(line []byte, offset int64) error {
+//	    // Process each line with its offset
 //	    return nil
 //	})
-func (s *S3Streamer) Stream(ctx context.Context, bucket, key string, offset int64, fn func([]byte) error) error {
+func (s *S3Streamer) Stream(ctx context.Context, bucket, key string, offset int64, fn func([]byte, int64) error) error {
 
 	// Get the object size first
 	headResp, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
@@ -133,15 +134,22 @@ func (s *S3Streamer) Stream(ctx context.Context, bucket, key string, offset int6
 		return fmt.Errorf("failed to process data stream (type: %s): %w", compressionType, err)
 	}
 
-	// Process the file line by line
+	// Process the file line by line with offset tracking
 	scanner := bufio.NewScanner(reader)
 	// Use a larger buffer size for better performance with large lines
 	scanner.Buffer(make([]byte, 1024*1024), 10*1024*1024) // 10MB max line size
 
+	var currentOffset int64 = 0
 	lineNum := 0
 	for scanner.Scan() {
 		lineNum++
-		if err := fn(scanner.Bytes()); err != nil {
+		lineData := scanner.Bytes()
+		lineOffset := currentOffset
+
+		// Update offset for next line (include the line content + newline)
+		currentOffset += int64(len(lineData)) + 1 // +1 for newline character
+
+		if err := fn(lineData, lineOffset); err != nil {
 			return fmt.Errorf("error processing line %d: %w", lineNum, err)
 		}
 	}
