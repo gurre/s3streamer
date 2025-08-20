@@ -44,12 +44,12 @@ func (compression *Compression) Extension() string {
 // DetectCompression detects the compression type from the file's magic bytes.
 // Example:
 //
-//	data := []byte{0x1F, 0x8B, 0x08, ...} // Gzip magic bytes
+//	data := []byte{0x1F, 0x8B, ...} // Gzip magic bytes
 //	compression := s3streamer.DetectCompression(data) // Returns s3streamer.Gzip
 func DetectCompression(source []byte) Compression {
 	for compression, m := range map[Compression][]byte{
 		Bzip2: {0x42, 0x5A, 0x68},
-		Gzip:  {0x1F, 0x8B, 0x08},
+		Gzip:  {0x1F, 0x8B}, // Only check first 2 bytes to support all gzip compression methods
 	} {
 		if len(source) >= len(m) && bytes.Equal(m, source[:len(m)]) {
 			return compression

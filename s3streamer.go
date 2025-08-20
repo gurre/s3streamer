@@ -18,6 +18,10 @@ import (
 type S3Client interface {
 	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
 	HeadObject(ctx context.Context, params *s3.HeadObjectInput, optFns ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
+	CreateMultipartUpload(ctx context.Context, params *s3.CreateMultipartUploadInput, optFns ...func(*s3.Options)) (*s3.CreateMultipartUploadOutput, error)
+	UploadPart(ctx context.Context, params *s3.UploadPartInput, optFns ...func(*s3.Options)) (*s3.UploadPartOutput, error)
+	CompleteMultipartUpload(ctx context.Context, params *s3.CompleteMultipartUploadInput, optFns ...func(*s3.Options)) (*s3.CompleteMultipartUploadOutput, error)
+	AbortMultipartUpload(ctx context.Context, params *s3.AbortMultipartUploadInput, optFns ...func(*s3.Options)) (*s3.AbortMultipartUploadOutput, error)
 }
 
 // Streamer interface defines the contract for streaming data from S3.
@@ -127,10 +131,15 @@ func (s *S3Streamer) Stream(ctx context.Context, bucket, key string, offset int6
 	// Start a fresh download from the offset
 	remainingSize := totalSize - offset
 	chunkStreamer := NewChunkStreamer(ctx, s.client, bucket, key, offset, remainingSize, s.chunkSize)
+	if chunkStreamer == nil {
+		return fmt.Errorf("failed to create chunk streamer: invalid parameters")
+	}
 
 	// Decompress the stream if needed, or pass through as-is
 	reader, err := Decompress(chunkStreamer)
 	if err != nil {
+		// Clean up the chunk streamer if decompression fails
+		chunkStreamer.Close()
 		return fmt.Errorf("failed to process data stream (type: %s): %w", compressionType, err)
 	}
 

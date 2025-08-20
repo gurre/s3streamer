@@ -286,6 +286,26 @@ func (m *ErrorMockS3Client) HeadObject(ctx context.Context, params *s3.HeadObjec
 	return nil, m.err
 }
 
+// CreateMultipartUpload implements the S3Client interface (not used in reader tests)
+func (m *ErrorMockS3Client) CreateMultipartUpload(ctx context.Context, params *s3.CreateMultipartUploadInput, optFns ...func(*s3.Options)) (*s3.CreateMultipartUploadOutput, error) {
+	return nil, m.err
+}
+
+// UploadPart implements the S3Client interface (not used in reader tests)
+func (m *ErrorMockS3Client) UploadPart(ctx context.Context, params *s3.UploadPartInput, optFns ...func(*s3.Options)) (*s3.UploadPartOutput, error) {
+	return nil, m.err
+}
+
+// CompleteMultipartUpload implements the S3Client interface (not used in reader tests)
+func (m *ErrorMockS3Client) CompleteMultipartUpload(ctx context.Context, params *s3.CompleteMultipartUploadInput, optFns ...func(*s3.Options)) (*s3.CompleteMultipartUploadOutput, error) {
+	return nil, m.err
+}
+
+// AbortMultipartUpload implements the S3Client interface (not used in reader tests)
+func (m *ErrorMockS3Client) AbortMultipartUpload(ctx context.Context, params *s3.AbortMultipartUploadInput, optFns ...func(*s3.Options)) (*s3.AbortMultipartUploadOutput, error) {
+	return nil, m.err
+}
+
 func TestChunkStreamerBufferManagement(t *testing.T) {
 	testData := []byte("Buffer management test data that should be handled correctly.")
 	ctx := context.Background()

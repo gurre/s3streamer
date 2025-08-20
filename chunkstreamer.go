@@ -10,9 +10,11 @@ import (
 )
 
 // ChunkStreamer is an io.Reader implementation that streams data in chunks from S3.
+// It also implements io.Closer for proper resource cleanup.
 // Example:
 //
 //	streamer := s3streamer.NewChunkStreamer(ctx, client, "my-bucket", "data.json.gz", 0, 1024*1024, 5*1024*1024)
+//	defer streamer.Close()
 //	data := make([]byte, 1024)
 //	n, err := streamer.Read(data)
 type ChunkStreamer struct {
@@ -25,13 +27,41 @@ type ChunkStreamer struct {
 	eof           bool
 	buffer        []byte
 	mu            sync.Mutex
+	closed        bool
 }
 
 // NewChunkStreamer creates a new ChunkStreamer for retrieving a file from S3 in chunks.
+// Returns nil if required parameters are invalid.
 // Example:
 //
 //	streamer := s3streamer.NewChunkStreamer(ctx, client, "my-bucket", "data.json.gz", 0, 1024*1024, 5*1024*1024)
+//	if streamer == nil {
+//	    return fmt.Errorf("invalid parameters")
+//	}
 func NewChunkStreamer(ctx context.Context, client S3Client, bucket, key string, offset, size, chunkSize int64) *ChunkStreamer {
+	// Validate required parameters
+	if ctx == nil {
+		return nil
+	}
+	if client == nil {
+		return nil
+	}
+	if bucket == "" {
+		return nil
+	}
+	if key == "" {
+		return nil
+	}
+	if chunkSize <= 0 {
+		return nil
+	}
+	if size < 0 {
+		return nil
+	}
+	if offset < 0 {
+		return nil
+	}
+
 	return &ChunkStreamer{
 		client:        client,
 		bucket:        bucket,
@@ -55,6 +85,10 @@ func NewChunkStreamer(ctx context.Context, client S3Client, bucket, key string, 
 func (c *ChunkStreamer) Read(p []byte) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if c.closed {
+		return 0, fmt.Errorf("cannot read from closed ChunkStreamer")
+	}
 
 	if c.eof && len(c.buffer) == 0 {
 		return 0, io.EOF
@@ -116,4 +150,23 @@ func (c *ChunkStreamer) Read(p []byte) (int, error) {
 	}
 
 	return n, nil
+}
+
+// Close implements io.Closer to clean up resources.
+// After calling Close, subsequent Read calls will return an error.
+// Example:
+//
+//	streamer := s3streamer.NewChunkStreamer(ctx, client, "my-bucket", "data.json.gz", 0, 1024*1024, 5*1024*1024)
+//	defer streamer.Close()
+func (c *ChunkStreamer) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.closed {
+		return nil
+	}
+
+	c.closed = true
+	c.buffer = nil // Clear buffer to release memory
+	return nil
 }

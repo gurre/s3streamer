@@ -123,6 +123,26 @@ func (m *MockS3Client) HeadObject(ctx context.Context, params *s3.HeadObjectInpu
 	}, nil
 }
 
+// CreateMultipartUpload implements the S3Client interface (not used in reader tests)
+func (m *MockS3Client) CreateMultipartUpload(ctx context.Context, params *s3.CreateMultipartUploadInput, optFns ...func(*s3.Options)) (*s3.CreateMultipartUploadOutput, error) {
+	return nil, fmt.Errorf("CreateMultipartUpload not implemented in mock reader client")
+}
+
+// UploadPart implements the S3Client interface (not used in reader tests)
+func (m *MockS3Client) UploadPart(ctx context.Context, params *s3.UploadPartInput, optFns ...func(*s3.Options)) (*s3.UploadPartOutput, error) {
+	return nil, fmt.Errorf("UploadPart not implemented in mock reader client")
+}
+
+// CompleteMultipartUpload implements the S3Client interface (not used in reader tests)
+func (m *MockS3Client) CompleteMultipartUpload(ctx context.Context, params *s3.CompleteMultipartUploadInput, optFns ...func(*s3.Options)) (*s3.CompleteMultipartUploadOutput, error) {
+	return nil, fmt.Errorf("CompleteMultipartUpload not implemented in mock reader client")
+}
+
+// AbortMultipartUpload implements the S3Client interface (not used in reader tests)
+func (m *MockS3Client) AbortMultipartUpload(ctx context.Context, params *s3.AbortMultipartUploadInput, optFns ...func(*s3.Options)) (*s3.AbortMultipartUploadOutput, error) {
+	return nil, fmt.Errorf("AbortMultipartUpload not implemented in mock reader client")
+}
+
 // parseRangeHeader parses S3 range header formats like "bytes=0-499" or "bytes=500-"
 func parseRangeHeader(rangeHeader string, contentLength int64) (int64, int64, error) {
 	var start, end int64

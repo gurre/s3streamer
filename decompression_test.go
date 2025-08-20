@@ -37,12 +37,22 @@ func TestCompressionExtensionUnknown(t *testing.T) {
 }
 
 func TestDetectCompressionGzip(t *testing.T) {
-	// Gzip magic bytes: 0x1F, 0x8B, 0x08
+	// Standard gzip magic bytes: 0x1F, 0x8B, 0x08 (deflate compression)
 	gzipData := []byte{0x1F, 0x8B, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF}
 
 	compression := DetectCompression(gzipData)
 	if compression != Gzip {
 		t.Errorf("Expected Gzip compression, got %d", compression)
+	}
+}
+
+func TestDetectCompressionGzipAlternative(t *testing.T) {
+	// Gzip magic bytes with different compression method: 0x1F, 0x8B, 0x01 (compress compression)
+	gzipData := []byte{0x1F, 0x8B, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF}
+
+	compression := DetectCompression(gzipData)
+	if compression != Gzip {
+		t.Errorf("Expected Gzip compression for alternative method, got %d", compression)
 	}
 }
 
@@ -76,8 +86,8 @@ func TestDetectCompressionEmptyData(t *testing.T) {
 }
 
 func TestDetectCompressionShortData(t *testing.T) {
-	// Data shorter than magic bytes
-	shortData := []byte{0x1F, 0x8B} // Only 2 bytes, gzip needs 3
+	// Data shorter than gzip magic bytes (only 1 byte)
+	shortData := []byte{0x1F} // Only 1 byte, gzip needs 2
 
 	compression := DetectCompression(shortData)
 	if compression != Uncompressed {
@@ -86,8 +96,8 @@ func TestDetectCompressionShortData(t *testing.T) {
 }
 
 func TestDetectCompressionPartialMatch(t *testing.T) {
-	// Data that starts like gzip but isn't
-	partialGzipData := []byte{0x1F, 0x8B, 0x09, 0x00, 0x00} // Wrong third byte
+	// Data that starts with wrong gzip magic bytes
+	partialGzipData := []byte{0x1F, 0x8C, 0x09, 0x00, 0x00} // Wrong second byte (0x8C instead of 0x8B)
 
 	compression := DetectCompression(partialGzipData)
 	if compression != Uncompressed {
