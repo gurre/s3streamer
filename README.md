@@ -408,7 +408,7 @@ streamer := s3streamer.NewS3Streamer(client)
 highThroughputStreamer := s3streamer.NewChunkStreamer(ctx, client, bucket, key, 0, fileSize, 10*1024*1024) // 10MiB chunks
 
 // For low-latency processing of many small files
-lowLatencyStreamer := s3streamer.NewChunkStreamer(ctx, client, bucket, key, 0, fileSize, 256*1024) // 256KB chunks
+lowLatencyStreamer := s3streamer.NewChunkStreamer(ctx, client, bucket, key, 0, fileSize, 1*1024*1024) // 1MB chunks
 ```
 
 ### Writing Optimization
